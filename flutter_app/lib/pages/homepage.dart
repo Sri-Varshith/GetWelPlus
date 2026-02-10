@@ -162,6 +162,15 @@ class HomePage extends ConsumerWidget {
               },
             ),
             SizedBox(height: 20,),
+            FeatureCard(
+              imagePath: 'assets/images/online_call.jpg',
+              title: '1:1 Online Meet',
+              subtitle: 'Talk privately with a psychiatrist online',
+              onTap: () {
+                // navigate to online consultation flow later
+              },
+            ),
+
           FeatureCard(
             imagePath: "assets/images/mood.jpg",
             title: 'Track your mood',
@@ -171,14 +180,15 @@ class HomePage extends ConsumerWidget {
             },
           ),
             // SizedBox(height: 20,),
-            FeatureCard(
-              imagePath: 'assets/images/meditation.jpg',
-              title: 'Guided Meditation',
-              subtitle: 'Relax your mind in just a few minutes',
-              onTap: () {
-                // open meditation page
-              },
-            ),
+          FeatureCard(
+            imagePath: 'assets/images/book_a_slot.jpg',
+            title: 'Book a Session',
+            subtitle: 'Meet a mental health professional offline',
+            onTap: () {
+              // navigate to booking page later
+            },
+          ),
+
             FeatureCard(
               imagePath: 'assets/images/stress.jpg',
               title: 'Stress Check',

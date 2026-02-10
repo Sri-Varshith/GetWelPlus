@@ -68,27 +68,6 @@ int selectedOption=0;
                       const SizedBox(height: 20,),
 
                       Center(child: AuthButton(label: "Next", onPressed: (){}))
-                      // SizedBox(
-                      //   width: 104,
-                      //   height: 52,
-                      //   child: ElevatedButton(
-                      //     onPressed: () {
-                      //       // next question logic later
-                      //     },
-                      //     style: ElevatedButton.styleFrom(
-                      //       shape: RoundedRectangleBorder(
-                      //         borderRadius: BorderRadius.circular(14),
-                      //       ),
-                      //     ),
-                      //     child: const Text(
-                      //       'Next',
-                      //       style: TextStyle(
-                      //         fontSize: 18,
-                      //         fontWeight: FontWeight.w600,
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
 
 
 
