@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_app/widgets/feature_card.dart';
 import 'package:flutter_app/pages/stress_check_page.dart';
 import 'package:flutter_app/pages/article_page.dart';
+import 'package:flutter_app/pages/mood_tracker.dart';
 
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
@@ -180,6 +181,11 @@ class HomePage extends ConsumerWidget {
                 subtitle: 'Log how you’re feeling today',
                 onTap: () {
                   // navigate to mood tracker page
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const MoodTrackerPage(),
+                      ),
+                    );
                 },
               ),
                 // SizedBox(height: 20,),
