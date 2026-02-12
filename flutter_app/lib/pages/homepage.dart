@@ -7,6 +7,7 @@ import 'package:flutter_app/widgets/feature_card.dart';
 import 'package:flutter_app/pages/stress_check_page.dart';
 import 'package:flutter_app/pages/article_page.dart';
 import 'package:flutter_app/pages/mood_tracker.dart';
+import 'package:flutter_app/pages/ai_chat.dart';
 
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
@@ -237,6 +238,11 @@ class HomePage extends ConsumerWidget {
           foregroundColor: Colors.black,
           onPressed: () {
             // Navigate to AI Chat screen later
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const AiChatPage(),
+                  ),
+                );
           },
           backgroundColor: Colors.green,
           child: const Text("AI",style: TextStyle(fontSize: 27),),
