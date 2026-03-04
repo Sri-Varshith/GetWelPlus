@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 // simple model to hold chat messages
 class ChatMessage {
@@ -24,9 +25,12 @@ class ChatService {
 
   final List<ChatMessage> _conversationHistory = [];
   String get _apiKey => dotenv.env['OPENROUTER_API_KEY'] ?? '';
+  
+  Map<String, dynamic>? _patientProfile;
+  bool _profileLoaded = false;
 
-  // this sets the personality for our AI
-  static const _systemPrompt = '''
+  // base personality for the AI
+  static const _basePrompt = '''
 You are a compassionate and supportive mental health assistant for the GetWel+ app. 
 Your role is to:
 - Listen empathetically to users' concerns
@@ -41,12 +45,85 @@ Keep the response to around 70-80 words only.
 ''';
 
   ChatService() {
-    // kick things off with the system prompt
-    _conversationHistory.add(ChatMessage(role: 'system', content: _systemPrompt));
+    _initializeWithProfile();
+  }
+
+  // load patient profile and build personalized system prompt
+  Future<void> _initializeWithProfile() async {
+    await _loadPatientProfile();
+    final systemPrompt = _buildSystemPrompt();
+    _conversationHistory.add(ChatMessage(role: 'system', content: systemPrompt));
+    _profileLoaded = true;
+  }
+
+  Future<void> _loadPatientProfile() async {
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) return;
+
+      _patientProfile = await Supabase.instance.client
+          .from('patient_profiles')
+          .select()
+          .eq('user_id', user.id)
+          .maybeSingle();
+    } catch (e) {
+      // couldn't load profile, will use generic prompt
+      _patientProfile = null;
+    }
+  }
+
+  String _buildSystemPrompt() {
+    if (_patientProfile == null) return _basePrompt;
+
+    // build context from patient's medical history
+    final name = _patientProfile!['full_name'] ?? '';
+    final age = _patientProfile!['age'] ?? '';
+    final conditions = _patientProfile!['medical_conditions'] ?? '';
+    final medications = _patientProfile!['current_medications'] ?? '';
+    final concerns = _patientProfile!['mental_health_concerns'] ?? '';
+    final therapyHistory = _patientProfile!['therapy_history'] ?? '';
+
+    final contextParts = <String>[];
+    
+    if (name.toString().isNotEmpty) {
+      contextParts.add('The user\'s name is $name');
+    }
+    if (age.toString().isNotEmpty && age != 0) {
+      contextParts.add('they are $age years old');
+    }
+    if (conditions.toString().isNotEmpty) {
+      contextParts.add('Medical conditions: $conditions');
+    }
+    if (medications.toString().isNotEmpty) {
+      contextParts.add('Current medications: $medications');
+    }
+    if (concerns.toString().isNotEmpty) {
+      contextParts.add('Their main mental health concerns: $concerns');
+    }
+    if (therapyHistory.toString().isNotEmpty) {
+      contextParts.add('Therapy background: $therapyHistory');
+    }
+
+    if (contextParts.isEmpty) return _basePrompt;
+
+    final patientContext = '''
+
+PATIENT CONTEXT (use this to personalize your responses, but don't mention you have this info unless relevant):
+${contextParts.join('. ')}.
+
+Remember to be mindful of their medical history when suggesting coping strategies.
+''';
+
+    return _basePrompt + patientContext;
   }
 
   // sends user msg to openrouter and returns AI response
   Future<String> sendMessage(String userMessage) async {
+    // wait for profile to load if not ready
+    while (!_profileLoaded) {
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+
     if (_apiKey.isEmpty) {
       throw Exception('API key missing! Add OPENROUTER_API_KEY to your .env file.');
     }
@@ -92,7 +169,17 @@ Keep the response to around 70-80 words only.
   // wipe the chat but keep system prompt
   void clearHistory() {
     _conversationHistory.clear();
-    _conversationHistory.add(ChatMessage(role: 'system', content: _systemPrompt));
+    final systemPrompt = _buildSystemPrompt();
+    _conversationHistory.add(ChatMessage(role: 'system', content: systemPrompt));
+  }
+
+  // reload profile (call after user updates their info)
+  Future<void> refreshProfile() async {
+    await _loadPatientProfile();
+    // rebuild system prompt with new info
+    if (_conversationHistory.isNotEmpty && _conversationHistory[0].role == 'system') {
+      _conversationHistory[0] = ChatMessage(role: 'system', content: _buildSystemPrompt());
+    }
   }
 
   // get messages without the system prompt (for display)

@@ -10,6 +10,7 @@ import 'package:flutter_app/pages/stress_check_page.dart';
 import 'package:flutter_app/pages/article_page.dart';
 import 'package:flutter_app/pages/mood_tracker.dart';
 import 'package:flutter_app/pages/ai_chat.dart';
+import 'package:flutter_app/pages/profile_page.dart';
 
 // Widgets
 import 'package:flutter_app/widgets/feature_card.dart';
@@ -124,7 +125,13 @@ class _HomePageState extends ConsumerState<HomePage> {
               ListTile(
                 leading: const Icon(Icons.person),
                 title: const Text('Profile'),
-                onTap: () => Navigator.pop(context),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ProfilePage()),
+                  );
+                },
               ),
               ListTile(
                 leading: const Icon(Icons.settings),
