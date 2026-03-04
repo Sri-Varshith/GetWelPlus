@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_app/widgets/chat_bubble.dart';
+import 'package:flutter_app/services/chat_service.dart';
 
 class AiChatPage extends StatefulWidget {
   const AiChatPage({super.key});
@@ -11,41 +12,87 @@ class AiChatPage extends StatefulWidget {
 class _AiChatPageState extends State<AiChatPage> {
 
   final TextEditingController _messageController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final ChatService _chatService = ChatService();
 
-  final List<Map<String, dynamic>> _messages = [
-    {"text": "message from ai", "isUser": false},
-    {"text": "message from user", "isUser": true},
-    {"text": "message from ai but this is longer to check ui wrapping properly", "isUser": false},
-  ];
+  final List<Map<String, dynamic>> _messages = [];
+  bool _isLoading = false;
 
-  void _sendMessage() {
+  @override
+  void initState() {
+    super.initState();
+    // Add initial greeting from AI
+    _messages.add({
+      "text": "Hello! I'm your mental health companion. How are you feeling today? I'm here to listen and support you. 💚",
+      "isUser": false,
+    });
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
 
-    if (text.isEmpty) return;
+    if (text.isEmpty || _isLoading) return;
 
     setState(() {
       _messages.add({
         "text": text,
         "isUser": true,
       });
+      _isLoading = true;
     });
 
     _messageController.clear();
+    _scrollToBottom();
 
-    /// Simulated AI reply (temporary)
-    Future.delayed(const Duration(milliseconds: 600), () {
-      setState(() {
-        _messages.add({
-          "text": "AI response placeholder",
-          "isUser": false,
+    try {
+      final response = await _chatService.sendMessage(text);
+      
+      if (mounted) {
+        setState(() {
+          _messages.add({
+            "text": response,
+            "isUser": false,
+          });
+          _isLoading = false;
         });
-      });
-    });
+        _scrollToBottom();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _messages.add({
+            "text": "I'm sorry, I couldn't process your message. Please check your internet connection and try again.",
+            "isUser": false,
+          });
+          _isLoading = false;
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   @override
   void dispose() {
     _messageController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -56,6 +103,22 @@ class _AiChatPageState extends State<AiChatPage> {
         title: const Text("AI Chat"),
         centerTitle: true,
         elevation: 4,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Clear chat',
+            onPressed: () {
+              setState(() {
+                _chatService.clearHistory();
+                _messages.clear();
+                _messages.add({
+                  "text": "Hello! I'm your mental health companion. How are you feeling today? I'm here to listen and support you. 💚",
+                  "isUser": false,
+                });
+              });
+            },
+          ),
+        ],
       ),
       body: SafeArea(
         child: Column(
@@ -66,8 +129,36 @@ class _AiChatPageState extends State<AiChatPage> {
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: ListView.builder(
-                  itemCount: _messages.length,
+                  controller: _scrollController,
+                  itemCount: _messages.length + (_isLoading ? 1 : 0),
                   itemBuilder: (context, index) {
+                    // Show loading indicator at the end
+                    if (index == _messages.length && _isLoading) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.green,
+                              ),
+                            ),
+                            SizedBox(width: 12),
+                            Text(
+                              'Thinking...',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
                     final message = _messages[index];
 
                     return ChatBubble(
@@ -115,14 +206,14 @@ class _AiChatPageState extends State<AiChatPage> {
 
                   /// Send Button
                   Material(
-                    color: Colors.green,
+                    color: _isLoading ? Colors.grey : Colors.green,
                     shape: const CircleBorder(),
                     child: IconButton(
                       icon: const Icon(
                         Icons.send_rounded,
                         color: Colors.black,
                       ),
-                      onPressed: _sendMessage,
+                      onPressed: _isLoading ? null : _sendMessage,
                     ),
                   ),
                 ],
