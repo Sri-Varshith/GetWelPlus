@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_app/widgets/chat_bubble.dart';
+import 'package:flutter_app/services/chat_service.dart';
 
 class AiChatPage extends StatefulWidget {
   const AiChatPage({super.key});
@@ -9,43 +10,80 @@ class AiChatPage extends StatefulWidget {
 }
 
 class _AiChatPageState extends State<AiChatPage> {
+  final _messageController = TextEditingController();
+  final _scrollController = ScrollController();
+  final _chatService = ChatService();
 
-  final TextEditingController _messageController = TextEditingController();
+  final List<Map<String, dynamic>> _messages = [];
+  bool _isLoading = false;
 
-  final List<Map<String, dynamic>> _messages = [
-    {"text": "message from ai", "isUser": false},
-    {"text": "message from user", "isUser": true},
-    {"text": "message from ai but this is longer to check ui wrapping properly", "isUser": false},
-  ];
+  @override
+  void initState() {
+    super.initState();
+    // greet the user when they open chat
+    _messages.add({
+      "text": "Hey there! How are you feeling today? I'm here to chat. 💚",
+      "isUser": false,
+    });
+  }
 
-  void _sendMessage() {
+  // smooth scroll to latest message
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
-
-    if (text.isEmpty) return;
+    if (text.isEmpty || _isLoading) return;
 
     setState(() {
-      _messages.add({
-        "text": text,
-        "isUser": true,
-      });
+      _messages.add({"text": text, "isUser": true});
+      _isLoading = true;
     });
 
     _messageController.clear();
+    _scrollToBottom();
 
-    /// Simulated AI reply (temporary)
-    Future.delayed(const Duration(milliseconds: 600), () {
-      setState(() {
-        _messages.add({
-          "text": "AI response placeholder",
-          "isUser": false,
+    try {
+      final response = await _chatService.sendMessage(text);
+
+      if (mounted) {
+        setState(() {
+          _messages.add({"text": response, "isUser": false});
+          _isLoading = false;
         });
-      });
-    });
+        _scrollToBottom();
+      }
+    } catch (e) {
+      // handle errors gracefully
+      if (mounted) {
+        setState(() {
+          _messages.add({
+            "text": "Oops, something went wrong. Check your connection?",
+            "isUser": false,
+          });
+          _isLoading = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   @override
   void dispose() {
     _messageController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -56,46 +94,84 @@ class _AiChatPageState extends State<AiChatPage> {
         title: const Text("AI Chat"),
         centerTitle: true,
         elevation: 4,
+        actions: [
+          // reset chat button
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Start over',
+            onPressed: () {
+              setState(() {
+                _chatService.clearHistory();
+                _messages.clear();
+                _messages.add({
+                  "text": "Hey there! How are you feeling today? I'm here to chat. 💚",
+                  "isUser": false,
+                });
+              });
+            },
+          ),
+        ],
       ),
       body: SafeArea(
         child: Column(
           children: [
-
-            /// Messages Area
+            // chat messages list
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: ListView.builder(
-                  itemCount: _messages.length,
+                  controller: _scrollController,
+                  itemCount: _messages.length + (_isLoading ? 1 : 0),
                   itemBuilder: (context, index) {
-                    final message = _messages[index];
+                    // typing indicator when waiting for response
+                    if (index == _messages.length && _isLoading) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.green,
+                              ),
+                            ),
+                            SizedBox(width: 12),
+                            Text(
+                              'Thinking...',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
 
-                    return ChatBubble(
-                      message: message["text"],
-                      isUser: message["isUser"],
-                    );
+                    final msg = _messages[index];
+                    return ChatBubble(message: msg["text"], isUser: msg["isUser"]);
                   },
                 ),
               ),
             ),
 
-            /// Input Area
+            // message input area
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-
               child: Row(
                 children: [
-
-                  /// Real Text Field
+                  // text input
                   Expanded(
                     child: TextField(
-                      style: TextStyle(color: Colors.black),
+                      style: const TextStyle(color: Colors.black),
                       controller: _messageController,
                       maxLines: null,
                       textCapitalization: TextCapitalization.sentences,
                       decoration: InputDecoration(
-                        hintText: "Type your message...",
-                        hintStyle: TextStyle(color: Colors.black),
+                        hintText: "Type something...",
+                        hintStyle: const TextStyle(color: Colors.black54),
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16,
                           vertical: 12,
@@ -110,19 +186,14 @@ class _AiChatPageState extends State<AiChatPage> {
                       onSubmitted: (_) => _sendMessage(),
                     ),
                   ),
-
                   const SizedBox(width: 8),
-
-                  /// Send Button
+                  // send btn
                   Material(
-                    color: Colors.green,
+                    color: _isLoading ? Colors.grey : Colors.green,
                     shape: const CircleBorder(),
                     child: IconButton(
-                      icon: const Icon(
-                        Icons.send_rounded,
-                        color: Colors.black,
-                      ),
-                      onPressed: _sendMessage,
+                      icon: const Icon(Icons.send_rounded, color: Colors.black),
+                      onPressed: _isLoading ? null : _sendMessage,
                     ),
                   ),
                 ],
