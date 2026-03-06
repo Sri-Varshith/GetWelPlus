@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // Services and Providers
 import 'package:flutter_app/auth/auth_service.dart';
@@ -9,6 +10,7 @@ import 'package:flutter_app/auth/auth_service.dart';
 import 'package:flutter_app/pages/stress_check_page.dart';
 import 'package:flutter_app/pages/article_page.dart';
 import 'package:flutter_app/pages/mood_tracker.dart';
+import 'package:flutter_app/pages/online_meet_page.dart';
 import 'package:flutter_app/pages/ai_chat.dart';
 import 'package:flutter_app/pages/profile_page.dart';
 
@@ -53,6 +55,17 @@ class _HomePageState extends ConsumerState<HomePage> {
       }
     }
   }
+
+  Future<void> _launchURL(String url) async {
+  final uri = Uri.parse(url);
+  if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open the link')),
+      );
+    }
+  }
+}
 
   String getGreeting() {
     final hour = DateTime.now().hour;
@@ -179,7 +192,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                       imagePath: 'assets/images/online_call.jpg',
                       title: '1:1 Online Meet',
                       subtitle: 'Talk privately with a psychiatrist online',
-                      onTap: () {},
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const OnlineMeetPage())),
                     ),
                     FeatureCard(
                       imagePath: "assets/images/mood.jpg",
@@ -195,16 +208,12 @@ class _HomePageState extends ConsumerState<HomePage> {
                       },
                     ),
                     FeatureCard(
-                      imagePath: 'assets/images/meditation.jpg',
-                      title: 'Guided Meditation',
-                      subtitle: 'Relax your mind in just a few minutes',
-                      onTap: () {},
-                    ),
-                    FeatureCard(
                       imagePath: 'assets/images/book_a_slot.jpg',
                       title: 'Book a Session',
                       subtitle: 'Meet a mental health professional offline',
-                      onTap: () {},
+                      onTap: () {
+                        _launchURL('https://appointment.iitbhilai.ac.in/');
+                      },
                     ),
                     FeatureCard(
                       imagePath: 'assets/images/stress.jpg',
@@ -231,12 +240,6 @@ class _HomePageState extends ConsumerState<HomePage> {
                           ),
                         );
                       },
-                    ),
-                    FeatureCard(
-                      imagePath: 'assets/images/music.jpg',
-                      title: 'Calm Music',
-                      subtitle: 'Soothing sounds to relax your mind',
-                      onTap: () {},
                     ),
                   ],
                 ),
