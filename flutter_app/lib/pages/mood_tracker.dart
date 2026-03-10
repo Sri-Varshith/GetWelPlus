@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:math' show max;
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 // A single day's mood log
 
@@ -23,22 +25,25 @@ class MoodEntry {
     required this.note,
   });
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'timestamp': timestamp.toIso8601String(),
-        'moodLevel': moodLevel,
-        'energyLevel': energyLevel,
+  // for inserting/updating in supabase
+  Map<String, dynamic> toSupabase(String userId) => {
+        'user_id': userId,
+        'log_date': id,
+        'mood_level': moodLevel,
+        'energy_level': energyLevel,
         'factors': factors,
         'note': note,
+        'updated_at': DateTime.now().toIso8601String(),
       };
 
-  factory MoodEntry.fromJson(Map<String, dynamic> json) => MoodEntry(
-        id: json['id'] as String,
-        timestamp: DateTime.parse(json['timestamp'] as String),
-        moodLevel: json['moodLevel'] as int,
-        energyLevel: (json['energyLevel'] as int?) ?? 3,
-        factors: List<String>.from((json['factors'] as List?) ?? []),
-        note: (json['note'] as String?) ?? '',
+  // reading from supabase row
+  factory MoodEntry.fromSupabase(Map<String, dynamic> row) => MoodEntry(
+        id: row['log_date'] as String,
+        timestamp: DateTime.tryParse(row['updated_at'] ?? row['created_at'] ?? '') ?? DateTime.now(),
+        moodLevel: row['mood_level'] as int,
+        energyLevel: (row['energy_level'] as int?) ?? 3,
+        factors: List<String>.from((row['factors'] as List?) ?? []),
+        note: (row['note'] as String?) ?? '',
       );
 }
 
@@ -66,28 +71,45 @@ Color _moodColor(int level) => _moodData[level - 1]['color'] as Color;
 String _moodEmoji(int level) => _moodData[level - 1]['emoji'] as String;
 String _moodLabel(int level) => _moodData[level - 1]['label'] as String;
 
-// Reads and writes entries from shared_preferences as JSON
+// get the current user's id (null if not logged in)
+String? _getCurrentUserId() {
+  return Supabase.instance.client.auth.currentUser?.id;
+}
 
-const _prefsKey = 'mood_entries_v1';
-
+// fetch mood entries for the logged-in user from supabase
 Future<List<MoodEntry>> _loadEntries() async {
-  final prefs = await SharedPreferences.getInstance();
-  final raw = prefs.getString(_prefsKey);
-  if (raw == null) return [];
+  final userId = _getCurrentUserId();
+  if (userId == null) return [];
+
   try {
-    final list = jsonDecode(raw) as List;
-    return (list.map((e) => MoodEntry.fromJson(e as Map<String, dynamic>)).toList())
-      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
-  } catch (_) {
+    final response = await Supabase.instance.client
+        .from('mood_logs')
+        .select()
+        .eq('user_id', userId)
+        .order('log_date', ascending: false);
+
+    return (response as List)
+        .map((row) => MoodEntry.fromSupabase(row as Map<String, dynamic>))
+        .toList();
+  } catch (e) {
+    debugPrint('Error loading mood entries: $e');
     return [];
   }
 }
 
+// save or update a mood entry for the current user
 Future<void> _persistEntry(MoodEntry entry, List<MoodEntry> existing) async {
-  final prefs = await SharedPreferences.getInstance();
-  // One entry per day — overwrite if the user re-logs the same day
-  final updated = [entry, ...existing.where((e) => e.id != entry.id)];
-  await prefs.setString(_prefsKey, jsonEncode(updated.map((e) => e.toJson()).toList()));
+  final userId = _getCurrentUserId();
+  if (userId == null) return;
+
+  try {
+    // upsert — inserts new row or updates existing one for that date
+    await Supabase.instance.client
+        .from('mood_logs')
+        .upsert(entry.toSupabase(userId), onConflict: 'user_id,log_date');
+  } catch (e) {
+    debugPrint('Error saving mood entry: $e');
+  }
 }
 
 // Shared utility functions
@@ -119,6 +141,11 @@ class _MoodTrackerPageState extends State<MoodTrackerPage> {
   List<MoodEntry> _entries = [];
   bool _loading = true;
 
+  // maya's mood analysis
+  String? _mayaInsight;
+  bool _loadingMaya = false;
+  bool _mayaError = false;
+
   @override
   void initState() {
     super.initState();
@@ -136,6 +163,94 @@ class _MoodTrackerPageState extends State<MoodTrackerPage> {
       return _entries.firstWhere((e) => e.id == key);
     } catch (_) {
       return null;
+    }
+  }
+
+  // ask maya to analyze mood patterns
+  Future<void> _getMayaInsight() async {
+    if (_entries.length < 3) return; // need a few entries to analyze
+    
+    setState(() {
+      _loadingMaya = true;
+      _mayaError = false;
+    });
+
+    try {
+      final apiKey = dotenv.env['OPENROUTER_API_KEY'] ?? '';
+      if (apiKey.isEmpty) throw Exception('API key missing');
+
+      // build a summary of recent mood data for maya
+      final recentEntries = _entries.take(14).toList(); // last 2 weeks
+      final moodSummary = recentEntries.map((e) {
+        final factors = e.factors.isNotEmpty ? ' (${e.factors.join(", ")})' : '';
+        final note = e.note.isNotEmpty ? ' - "${e.note}"' : '';
+        return '${e.id}: ${_moodLabel(e.moodLevel)} mood, ${_energyLabels[e.energyLevel - 1]} energy$factors$note';
+      }).join('\n');
+
+      final avgMood = recentEntries.fold(0, (s, e) => s + e.moodLevel) / recentEntries.length;
+      final avgEnergy = recentEntries.fold(0, (s, e) => s + e.energyLevel) / recentEntries.length;
+
+      // count common factors
+      final factorCounts = <String, int>{};
+      for (final e in recentEntries) {
+        for (final f in e.factors) {
+          factorCounts[f] = (factorCounts[f] ?? 0) + 1;
+        }
+      }
+      final topFactors = factorCounts.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+
+      final prompt = '''
+You are Maya, a warm and caring wellness friend. Analyze this person's mood log from the past ${recentEntries.length} days and share your thoughts like a supportive friend would.
+
+Mood Data:
+$moodSummary
+
+Stats:
+- Average mood: ${avgMood.toStringAsFixed(1)}/5
+- Average energy: ${avgEnergy.toStringAsFixed(1)}/5
+- Most logged factors: ${topFactors.take(3).map((e) => e.key).join(', ')}
+
+Give a brief, warm analysis (3-4 sentences max). Notice any patterns, celebrate wins, gently acknowledge struggles. If you see something concerning, suggest it kindly. End with one small, actionable tip. Sound like a caring friend texting, not a clinical report. Use 1-2 emojis naturally.''';
+
+      final response = await http.post(
+        Uri.parse('https://openrouter.ai/api/v1/chat/completions'),
+        headers: {
+          'Authorization': 'Bearer $apiKey',
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://getwelplus.app',
+          'X-Title': 'GetWel+',
+        },
+        body: jsonEncode({
+          'model': 'stepfun/step-3.5-flash:free',
+          'messages': [
+            {'role': 'user', 'content': prompt}
+          ],
+          'temperature': 0.7,
+          'max_tokens': 300,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final insight = data['choices'][0]['message']['content'] as String;
+        if (mounted) {
+          setState(() {
+            _mayaInsight = insight.trim();
+            _loadingMaya = false;
+          });
+        }
+      } else {
+        throw Exception('API error');
+      }
+    } catch (e) {
+      debugPrint('Maya insight error: $e');
+      if (mounted) {
+        setState(() {
+          _loadingMaya = false;
+          _mayaError = true;
+        });
+      }
     }
   }
 
@@ -566,6 +681,135 @@ class _MoodTrackerPageState extends State<MoodTrackerPage> {
     );
   }
 
+  // maya's insight card - analyzes mood patterns
+  Widget _buildMayaInsights(BuildContext context) {
+    // need at least 3 entries before maya can analyze
+    if (_entries.length < 3) return const SizedBox.shrink();
+
+    final scheme = Theme.of(context).colorScheme;
+
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: scheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text('💭', style: const TextStyle(fontSize: 20)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("Maya's Insights",
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w700)),
+                    Text('Based on your recent mood logs',
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelSmall
+                            ?.copyWith(color: scheme.outline)),
+                  ],
+                ),
+              ),
+              if (_mayaInsight != null)
+                IconButton(
+                  icon: const Icon(Icons.refresh_rounded, size: 20),
+                  onPressed: _loadingMaya ? null : _getMayaInsight,
+                  tooltip: 'Refresh insights',
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          
+          if (_mayaInsight == null && !_loadingMaya && !_mayaError)
+            // show button to get insights
+            Center(
+              child: OutlinedButton.icon(
+                onPressed: _getMayaInsight,
+                icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                label: const Text('Ask Maya to analyze'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                ),
+              ),
+            )
+          else if (_loadingMaya)
+            // loading state
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: scheme.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text('Maya is looking at your patterns...',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: scheme.outline)),
+                  ],
+                ),
+              ),
+            )
+          else if (_mayaError)
+            // error state
+            Center(
+              child: Column(
+                children: [
+                  Text("Couldn't reach Maya right now",
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: scheme.error)),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: _getMayaInsight,
+                    child: const Text('Try again'),
+                  ),
+                ],
+              ),
+            )
+          else
+            // show maya's insight
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: scheme.primaryContainer.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: scheme.primaryContainer,
+                  width: 1,
+                ),
+              ),
+              child: Text(
+                _mayaInsight!,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      height: 1.5,
+                    ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -596,6 +840,8 @@ class _MoodTrackerPageState extends State<MoodTrackerPage> {
                     _buildDistribution(context),
                     const SizedBox(height: 20),
                     _buildRecentEntries(context),
+                    const SizedBox(height: 24),
+                    _buildMayaInsights(context),
                   ],
                 ),
               ),
