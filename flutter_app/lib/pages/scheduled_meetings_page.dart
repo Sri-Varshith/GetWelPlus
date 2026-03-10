@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_app/models/meeting_model.dart';
 import 'package:flutter_app/pages/doctor_chat_page.dart';
 import 'package:flutter_app/widgets/meeting_card.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ScheduledMeetingsPage extends StatefulWidget {
   const ScheduledMeetingsPage({super.key});
@@ -87,7 +88,7 @@ class _ScheduledMeetingsPageState extends State<ScheduledMeetingsPage> {
                     });
                   },
 
-                  onJoin: () {
+                  onJoin: () async {
                     if (meeting.isChat) {
                       Navigator.push(
                         context,
@@ -96,11 +97,23 @@ class _ScheduledMeetingsPageState extends State<ScheduledMeetingsPage> {
                         ),
                       );
                     } else {
-                      // TODO: launch Jitsi video call
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text('Joining video call...')),
+                      final url = Uri.parse(
+                        'https://meet.jit.si/${meeting.jitsiRoom}',
                       );
+                      if (await canLaunchUrl(url)) {
+                        await launchUrl(
+                          url,
+                          mode: LaunchMode.externalApplication,
+                        );
+                      } else {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Could not open video call'),
+                            ),
+                          );
+                        }
+                      }
                     }
                   },
                 );

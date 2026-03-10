@@ -3,6 +3,7 @@ import 'package:flutter_app/models/meeting_model.dart';
 import 'package:flutter_app/widgets/meeting_card.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_app/pages/doctor_chat_page.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class OnlineMeetPage extends StatefulWidget {
   const OnlineMeetPage({super.key});
@@ -423,7 +424,7 @@ class _OnlineMeetPageState extends State<OnlineMeetPage>
                             );
                           });
                         },
-                        onJoin: () {
+                        onJoin: () async {
                           if (meeting.isChat) {
                             Navigator.push(
                               context,
@@ -432,11 +433,23 @@ class _OnlineMeetPageState extends State<OnlineMeetPage>
                               ),
                             );
                           } else {
-                            // TODO: launch Jitsi video call
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text('Joining video call...')),
+                            final url = Uri.parse(
+                              'https://meet.jit.si/${meeting.jitsiRoom}',
                             );
+                            if (await canLaunchUrl(url)) {
+                              await launchUrl(
+                                url,
+                                mode: LaunchMode.externalApplication,
+                              );
+                            } else {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Could not open video call'),
+                                  ),
+                                );
+                              }
+                            }
                           }
                         },
                       );
