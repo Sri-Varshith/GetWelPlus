@@ -55,7 +55,6 @@ class MeetingCard extends StatelessWidget {
   bool get _isCancellable =>
       meeting.status == 'pending' || meeting.status == 'confirmed';
 
-  // use this for display only — past confirmed meetings show as completed
   String get _displayStatus {
     if (meeting.isAttended && meeting.status == 'confirmed') return 'completed';
     return meeting.status;
@@ -79,7 +78,7 @@ class MeetingCard extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Icon
+                  // Icon — changes based on meetingType
                   Container(
                     width: 48,
                     height: 48,
@@ -88,7 +87,9 @@ class MeetingCard extends StatelessWidget {
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      Icons.videocam_outlined,
+                      meeting.isChat
+                          ? Icons.chat_outlined
+                          : Icons.videocam_outlined,
                       color: _statusColor(_displayStatus),
                     ),
                   ),
@@ -153,8 +154,6 @@ class MeetingCard extends StatelessWidget {
                 ],
               ),
 
-              // Buttons — only show if onCancel or onJoin is provided
-              // and meeting is not cancelled/completed
               if (onCancel != null || onJoin != null)
                 if (_displayStatus != 'cancelled' &&
                     _displayStatus != 'completed') ...[
@@ -177,10 +176,17 @@ class MeetingCard extends StatelessWidget {
                                   const EdgeInsets.symmetric(vertical: 10),
                             ),
                             onPressed: _isJoinable ? onJoin : null,
-                            icon: const Icon(Icons.video_call_outlined,
-                                size: 18),
+                            // Icon + label change based on meetingType
+                            icon: Icon(
+                              meeting.isChat
+                                  ? Icons.chat_outlined
+                                  : Icons.video_call_outlined,
+                              size: 18,
+                            ),
                             label: Text(
-                              _isJoinable ? 'Join' : 'Not Yet',
+                              meeting.isChat
+                                  ? (_isJoinable ? 'Open Chat' : 'Not Yet')
+                                  : (_isJoinable ? 'Join' : 'Not Yet'),
                               style: const TextStyle(
                                   fontWeight: FontWeight.w600),
                             ),
@@ -204,8 +210,7 @@ class MeetingCard extends StatelessWidget {
                             icon: const Icon(Icons.cancel_outlined, size: 18),
                             label: const Text(
                               'Cancel',
-                              style:
-                                  TextStyle(fontWeight: FontWeight.w600),
+                              style: TextStyle(fontWeight: FontWeight.w600),
                             ),
                           ),
                         ),
