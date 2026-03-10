@@ -13,6 +13,7 @@ import 'package:flutter_app/pages/mood_tracker.dart';
 import 'package:flutter_app/pages/online_meet_page.dart';
 import 'package:flutter_app/pages/ai_chat.dart';
 import 'package:flutter_app/pages/profile_page.dart';
+import 'package:flutter_app/pages/maya_consent_page.dart';
 
 // Widgets
 import 'package:flutter_app/widgets/feature_card.dart';
@@ -27,12 +28,14 @@ class HomePage extends ConsumerStatefulWidget {
 class _HomePageState extends ConsumerState<HomePage> {
   final authService = AuthService();
   Map<String, dynamic>? userProfile;
+  Map<String, dynamic>? patientProfile;
   bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _loadUserProfile();
+    _loadPatientProfile();
   }
 
   Future<void> _loadUserProfile() async {
@@ -53,6 +56,40 @@ class _HomePageState extends ConsumerState<HomePage> {
           isLoading = false;
         });
       }
+    }
+  }
+
+  Future<void> _loadPatientProfile() async {
+    try {
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId != null) {
+        final profile = await Supabase.instance.client
+            .from('patient_profiles')
+            .select('maya_data_consent')
+            .eq('user_id', userId)
+            .maybeSingle();
+        if (mounted) {
+          setState(() => patientProfile = profile);
+        }
+      }
+    } catch (e) {
+      // silent fail, will show consent page
+    }
+  }
+
+  void _openMayaChat() {
+    // check if user has already given consent
+    final consent = patientProfile?['maya_data_consent'];
+    
+    if (consent == null) {
+      // first time - show consent page
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const MayaConsentPage()));
+    } else {
+      // already consented - go straight to chat
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => AiChatPage(sharesMedicalData: consent == true)),
+      );
     }
   }
 
@@ -245,12 +282,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                 ),
               ),
         floatingActionButton: FloatingActionButton.extended(
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const AiChatPage()),
-            );
-          },
+          onPressed: _openMayaChat,
           backgroundColor: const Color(0xFF4CAF50),
           foregroundColor: Colors.white,
           elevation: 6,

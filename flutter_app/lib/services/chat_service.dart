@@ -28,6 +28,7 @@ class ChatService {
   
   Map<String, dynamic>? _patientProfile;
   bool _profileLoaded = false;
+  final bool _usePersonalData;
 
   // maya's personality - warm, relatable, like a good friend
   static const _basePrompt = '''
@@ -60,7 +61,7 @@ Communication style:
 Remember: You're Maya, not an AI assistant. Be human, be real, be there for them.
 ''';
 
-  ChatService() {
+  ChatService({bool usePersonalData = true}) : _usePersonalData = usePersonalData {
     _initializeWithProfile();
   }
 
@@ -89,7 +90,8 @@ Remember: You're Maya, not an AI assistant. Be human, be real, be there for them
   }
 
   String _buildSystemPrompt() {
-    if (_patientProfile == null) return _basePrompt;
+    // if user didn't consent to data sharing, just use base prompt
+    if (!_usePersonalData || _patientProfile == null) return _basePrompt;
 
     // build context from patient's medical history
     final name = _patientProfile!['full_name'] ?? '';

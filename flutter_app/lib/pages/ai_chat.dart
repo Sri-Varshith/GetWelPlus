@@ -3,7 +3,9 @@ import 'package:flutter_app/widgets/chat_bubble.dart';
 import 'package:flutter_app/services/chat_service.dart';
 
 class AiChatPage extends StatefulWidget {
-  const AiChatPage({super.key});
+  final bool sharesMedicalData;
+
+  const AiChatPage({super.key, this.sharesMedicalData = true});
 
   @override
   State<AiChatPage> createState() => _AiChatPageState();
@@ -12,7 +14,7 @@ class AiChatPage extends StatefulWidget {
 class _AiChatPageState extends State<AiChatPage> {
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
-  final _chatService = ChatService();
+  late final ChatService _chatService;
 
   final List<Map<String, dynamic>> _messages = [];
   bool _isLoading = false;
@@ -20,6 +22,7 @@ class _AiChatPageState extends State<AiChatPage> {
   @override
   void initState() {
     super.initState();
+    _chatService = ChatService(usePersonalData: widget.sharesMedicalData);
     // maya greets the user
     _messages.add({
       "text": "Hey! I'm Maya 💚 Think of me as your friend who's always here to listen. How's your day going?",

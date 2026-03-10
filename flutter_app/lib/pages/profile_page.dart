@@ -100,9 +100,8 @@ class _ProfilePageState extends State<ProfilePage> {
       final user = Supabase.instance.client.auth.currentUser;
       if (user == null) throw Exception('Not logged in');
 
-      await Supabase.instance.client.from('patient_profiles').upsert({
-        'user_id': user.id,
-        'display_id': _profile?['display_id'] ?? user.id.substring(0, 8).toUpperCase(),
+      // use update since profile already exists
+      await Supabase.instance.client.from('patient_profiles').update({
         'full_name': _nameController.text.trim(),
         'age': int.tryParse(_ageController.text) ?? 0,
         'gender': _selectedGender,
@@ -114,9 +113,8 @@ class _ProfilePageState extends State<ProfilePage> {
         'allergies': _allergiesController.text.trim(),
         'mental_health_concerns': _mentalHealthController.text.trim(),
         'therapy_history': _therapyHistoryController.text.trim(),
-        'onboarding_complete': true,
         'updated_at': DateTime.now().toIso8601String(),
-      });
+      }).eq('user_id', user.id);
 
       if (mounted) {
         setState(() {
